@@ -1,120 +1,165 @@
-# AI 分布式集群部署指南
+# AI分布式集群部署指南
+
+基于llama.cpp的分布式LLM推理集群，支持多台电脑协同推理。
+
+## 特点
+
+- **自动发现** - Worker自动发现Master，无需手动配置IP
+- **Web UI** - 现代化界面，可视化管理集群
+- **一键部署** - 双击bat即可运行
+- **实时监控** - 查看节点状态、在线情况
 
 ## 文件结构
 
 ```
 ai-cluster-setup/
-├── scripts/
-│   ├── setup-network.bat      ← 所有机器都要运行（设置固定IP+防火墙）
-│   └── test-cluster.bat       ← 部署完成后测试用
 ├── master/
-│   └── setup-master.bat       ← 在GTX1060那台机器运行
+│   ├── cluster_manager.py   # Master管理器（Web UI）
+│   └── setup-master.bat     # 部署脚本
 ├── worker/
-│   └── setup-worker.bat       ← 在每台Worker机器运行
-└── README.md                  ← 你在看的这个
+│   ├── cluster_worker.py    # Worker程序
+│   └── setup-worker.bat     # 部署脚本
+├── bin/                     # llama.cpp二进制文件（需下载）
+├── models/                  # GGUF模型文件（需下载）
+├── start-master.bat         # 启动Master
+├── start-worker.bat         # 启动Worker
+└── README.md
 ```
 
-## IP地址规划
+## 硬件配置
 
-| 机器 | CPU | IP地址 | 角色 |
-|------|-----|--------|------|
-| DESKTOP-TFINHN6 | i7-3770K + GTX1060 | 192.168.31.101 | **Master** |
-| DESKTOP-4LSVB5L | i7-2700K | 192.168.31.102 | Worker |
-| sima / XiaoXin 16 | i5-13420H | 192.168.31.103 | Worker |
-| DESKTOP-BRIV2VM | i5-3210M | 192.168.31.104 | Worker |
-| DESKTOP-8I1BFGC | i5-5200U | 192.168.31.105 | Worker（可选） |
-| DESKTOP-GPQGUTK | i3-3220 | 192.168.31.106 | Worker（可选） |
+| 机器 | CPU | GPU | IP | 角色 |
+|------|-----|-----|-----|------|
+| Master | i7-3770K | GTX1060 | 自动获取 | **Master** |
+| Worker 1 | i7-2700K | - | 自动获取 | Worker |
+| Worker 2 | i5-13420H | - | 自动获取 | Worker |
+| Worker 3 | i5-3210M | - | 自动获取 | Worker |
 
-## 部署步骤
+## 快速开始
 
-### Step 1: 网络配置（所有机器）
+### Step 1: 下载llama.cpp
 
-在**每台机器**上运行 `scripts/setup-network.bat`：
-- 输入对应的IP地址（见上表）
-- 自动设置固定IP和防火墙规则
-- 需要管理员权限
+从 https://github.com/ggerganov/llama.cpp/releases 下载：
 
-### Step 2: Master节点部署（GTX1060那台）
+- **Master机器**: 下载GPU版本（CUDA）
+- **Worker机器**: 下载CPU版本
 
-1. 把 `master/` 文件夹拷贝到 GTX1060 机器
-2. 运行 `setup-master.bat`
-3. 自动下载 llama.cpp + Qwen2.5-7B 模型（约4.5GB）
-4. 完成后运行 `start-master.bat` 启动
+将以下文件放入 `bin/` 目录：
+- `llama-server.exe`
+- `rpc-server.exe`
 
-### Step 3: Worker节点部署（其他机器）
+### Step 2: 下载模型
 
-1. 把 `worker/` 文件夹拷贝到每台 Worker 机器
-2. 运行 `setup-worker.bat`
-3. 输入 Master 的 IP（192.168.31.101）
-4. 自动下载 llama.cpp CPU版本
-5. **先启动 Master，再启动 Worker**
+从 https://huggingface.co/models?library=gguf 下载GGUF模型，放入 `models/` 目录。
 
-### Step 4: 测试
+推荐模型：
+- `Qwen2.5-7B-Instruct-Q4_K_M.gguf`（约4.5GB）
+- `Qwen2.5-3B-Instruct-Q4_K_M.gguf`（约2GB，内存小的机器用）
 
-在任意机器上运行 `scripts/test-cluster.bat`，检查：
-- 所有节点是否在线
-- Master API 是否可用
-- 是否能正常对话
+### Step 3: 启动Master
 
-## 使用方法
-
-### 启动顺序（重要！）
-
-```
-1. 先启动 Master:   在 GTX1060 机器运行 start-master.bat
-2. 再启动 Workers:  在每台 Worker 运行 start-worker.bat
-3. 最后使用:        在任何机器浏览器访问 http://192.168.31.101:8080
+在GTX1060那台机器上：
+```bash
+双击 start-master.bat
 ```
 
-### 调用 API
+浏览器会自动打开 http://localhost:18080
+
+### Step 4: 启动Worker
+
+在其他每台机器上：
+```bash
+双击 start-worker.bat
+```
+
+Worker会自动发现Master并注册。
+
+### Step 5: 启动集群
+
+在Web UI中：
+1. 选择模型
+2. 设置GPU层数（默认99）
+3. 点击"启动集群"
+
+## API使用
 
 ```bash
 # 对话接口
-curl http://192.168.31.101:8080/v1/chat/completions \
+curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5-7b","messages":[{"role":"user","content":"你好"}]}'
+  -d '{
+    "model": "qwen2.5-7b",
+    "messages": [{"role": "user", "content": "你好"}]
+  }'
 
-# 文本补全接口
-curl http://192.168.31.101:8080/v1/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"qwen2.5-7b","prompt":"Once upon a time"}'
+# 浏览器访问
+http://localhost:8080
 ```
 
-### 浏览器访问
+## 手动指定Master
 
-打开 `http://192.168.31.101:8080`，llama.cpp 自带 Web UI。
+如果自动发现失败，可以手动指定Master IP：
+
+```bash
+start-worker.bat 192.168.31.101
+```
 
 ## 常见问题
 
-### Q: Worker连接不上Master？
-- 确认 Master 先启动
-- 检查防火墙是否放行 50051 端口
-- 互相 ping 测试
+### Q: Worker找不到Master？
+
+1. 确保Master先启动
+2. 检查防火墙是否放行 UDP 50053 端口
+3. 尝试手动指定Master IP
 
 ### Q: 推理速度很慢？
-- 正常现象，老旧硬件+分布式有通信开销
-- 先单独用 GTX1060 测试（start-master-solo.bat）
-- 如果 solo 模式也慢，考虑换更小的模型（Qwen2.5-3B）
+
+1. 正常现象，分布式有通信开销
+2. 先单独用Master测试（不启动Worker）
+3. 考虑换更小的模型（Qwen2.5-3B）
 
 ### Q: 内存不够？
-- Worker 8GB 的可能比较紧张
-- 可以减少 `--ctx-size` 参数（如改为 2048）
-- 或者不参与该 Worker
 
-### Q: 换其他模型？
-把模型文件放到 `master/models/` 目录
-修改 `start-master.bat` 中的 `-m` 参数路径即可
+1. 减少GPU层数（ngl参数）
+2. 使用更小的模型
+3. 使用Q2量化版本
 
-## 进阶：添加更多模型
+## 技术原理
 
-```bash
-# 代码辅助
-# 下载 DeepSeek-Coder-6.7B 到 models/ 目录
-curl -L -o models/deepseek-coder-6.7b.gguf "https://huggingface.co/..."
-
-# 轻量任务
-# 下载 Qwen2.5-3B
-curl -L -o models/qwen2.5-3b.gguf "https://huggingface.co/..."
+```
+┌─────────────────────────────────────────────────────────┐
+│                      Master (GTX1060)                    │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │ Web UI      │  │ API Server  │  │ RPC Server  │     │
+│  │ (端口18080) │  │ (端口8080)  │  │ (端口50051) │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘     │
+└─────────────────────────────────────────────────────────┘
+        ↑                    ↑                ↑
+        │                    │                │
+        │ UDP广播            │ HTTP            │ RPC
+        │ (端口50053)        │                 │
+        │                    │                │
+┌───────┴────────────────────┴────────────────┴───────────┐
+│                    Worker节点们                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │ Worker 1    │  │ Worker 2    │  │ Worker 3    │     │
+│  │ RPC Server  │  │ RPC Server  │  │ RPC Server  │     │
+│  │ (端口50051) │  │ (端口50051) │  │ (端口50051) │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘     │
+└─────────────────────────────────────────────────────────┘
 ```
 
-修改 start-master.bat 中的模型路径即可切换。
+1. Master启动后，通过UDP广播自己的存在
+2. Worker启动后，监听UDP广播发现Master
+3. Worker向Master注册自己的IP和端口
+4. Master启动API服务器时，将所有Worker加入推理集群
+5. 用户请求通过Master分发到各个Worker协同处理
+
+## 开源协议
+
+MIT License
+
+## 致谢
+
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - 核心推理引擎
+- [llamacpp-distributed-inference](https://github.com/ADT109119/llamacpp-distributed-inference) - 参考实现
