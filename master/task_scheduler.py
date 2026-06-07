@@ -395,7 +395,7 @@ async function runAgent(agentId) {
 
 
 def main():
-    port = 18082
+    port = 18083
     server = HTTPServer(("0.0.0.0", port), SchedulerHandler)
     print(f"任务调度器启动: http://localhost:{port}")
     print(f"API: http://localhost:{port}/api/run?workflow=full_workflow&topic=测试")
