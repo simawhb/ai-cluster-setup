@@ -45,7 +45,7 @@ Write-Host ""
 Write-Host "--- 推理测试 ---" -ForegroundColor Yellow
 try {
     $body = @{
-        model = "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"
+        model = "gemma-4-12b-it-Q4_K_M.gguf"
         messages = @(@{role="user"; content="Say hello in one word"})
         max_tokens = 10
     } | ConvertTo-Json -Depth 3

@@ -31,7 +31,7 @@ if ($taskExists2) {
     Unregister-ScheduledTask -TaskName $taskName2 -Confirm:$false
 }
 
-$llamaArgs = "-m D:\AI-Models\DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf --host 0.0.0.0 --port 8080 -ngl 99 --parallel 2 --no-warmup"
+$llamaArgs = "-m D:\AI-Models\gemma-4-12b-it-Q4_K_M.gguf --host 0.0.0.0 --port 8080 -ngl 99 --parallel 2 --no-warmup"
 $action2 = New-ScheduledTaskAction -Execute "$BasePath\master\bin\llama-server.exe" -Argument $llamaArgs -WorkingDirectory "$BasePath\master"
 $trigger2 = New-ScheduledTaskTrigger -AtStartup
 $principal2 = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
