@@ -327,7 +327,8 @@ def create_full_workflow_crew(topic: str) -> Crew:
     t2 = Task(description=f"分析「{topic}」的合规风险和数据趋势", agent=digit)  # 不依赖 Scout
     t3 = Task(description=f"基于情报和分析，创作关于「{topic}」的抖音科普短视频文案", agent=nova, context_from=[t1, t2])
     t4 = Task(description=f"审核文案是否合规", agent=lex, context_from=[t3])
-    t5 = Task(description=f"汇总所有成果，生成工作汇报", agent=memo, context_from=[t1, t2, t3, t4])
+    # Memo 只取 Lex 审核结果（最精简），避免上下文过长导致超时
+    t5 = Task(description=f"基于审核结果，生成工作汇报摘要", agent=memo, context_from=[t4])
 
     return Crew(agents=[scout, digit, nova, lex, memo], tasks=[t1, t2, t3, t4, t5])
 

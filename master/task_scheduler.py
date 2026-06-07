@@ -139,6 +139,9 @@ class TaskScheduler:
         context_map = {}  # 每个 agent 的输出
         parallel_groups = workflow.get("parallel_groups", [workflow["steps"]])
 
+        # Memo 只使用 Lex 的输出，避免上下文过长
+        context_filter = {"memo": ["lex"]}
+
         print(f"\n{'='*50}")
         print(f"工作流: {workflow['name']}")
         print(f"主题: {topic}")
@@ -153,10 +156,15 @@ class TaskScheduler:
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = {}
                     for step in group:
-                        # 收集前置上下文
+                        # 收集前置上下文（根据 filter 决定范围）
+                        if step in context_filter:
+                            sources = context_filter[step]
+                        else:
+                            sources = list(context_map.keys())
+
                         ctx = "\n\n".join(
                             f"## {AGENTS[s]['name']} 的分析：\n{context_map[s]}"
-                            for s in context_map
+                            for s in sources if s in context_map
                         )
                         futures[executor.submit(self.call_llm, step, topic, ctx)] = step
 
@@ -174,9 +182,15 @@ class TaskScheduler:
                 agent = AGENTS[step]
                 print(f"[{group_idx+1}/{len(parallel_groups)}] {agent['name']} 执行中...")
 
+                # 收集前置上下文（根据 filter 决定范围）
+                if step in context_filter:
+                    sources = context_filter[step]
+                else:
+                    sources = list(context_map.keys())
+
                 ctx = "\n\n".join(
                     f"## {AGENTS[s]['name']} 的分析：\n{context_map[s]}"
-                    for s in context_map
+                    for s in sources if s in context_map
                 )
                 result = self.call_llm(step, topic, ctx)
                 results.append(result)
