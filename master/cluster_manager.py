@@ -203,10 +203,13 @@ class ClusterHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/api/models':
             models_dir = Path(__file__).parent.parent / "models"
-            models = []
+            extra_dir = Path("D:/AI-Models")
+            models = set()
             if models_dir.exists():
-                models = [f.name for f in models_dir.glob("*.gguf")]
-            self.send_json({"models": models})
+                models.update(f.name for f in models_dir.glob("*.gguf"))
+            if extra_dir.exists():
+                models.update(f.name for f in extra_dir.glob("*.gguf"))
+            self.send_json({"models": sorted(models)})
 
         elif self.path == '/api/start-rpc':
             result = cluster.start_rpc_server()
@@ -223,6 +226,8 @@ class ClusterHandler(SimpleHTTPRequestHandler):
                 return
 
             model_path = Path(__file__).parent.parent / "models" / model
+            if not model_path.exists():
+                model_path = Path("D:/AI-Models") / model
             if not model_path.exists():
                 self.send_json({"error": f"模型不存在: {model}"}, 400)
                 return
