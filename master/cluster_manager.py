@@ -8,16 +8,26 @@ import socket
 import subprocess
 import threading
 import time
+import logging
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 import webbrowser
 
-# 常量
-PORT = 18080
-RPC_PORT = 50051
-API_PORT = 8080
-BROADCAST_PORT = 50053
-VERSION = "1.0.0"
+# 添加父目录到路径，以便导入 config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import (
+    WEB_UI_PORT as PORT, RPC_PORT, API_PORT, BROADCAST_PORT,
+    MASTER_IP, NODE_TIMEOUT, HEARTBEAT_INTERVAL, BROADCAST_INTERVAL,
+    VERSION, get_model_path, list_available_models
+)
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 class ClusterManager:
     def __init__(self):
@@ -35,7 +45,8 @@ class ClusterManager:
             ip = s.getsockname()[0]
             s.close()
             return ip
-        except:
+        except Exception as e:
+            logger.warning(f"获取本机IP失败: {e}，使用 127.0.0.1")
             return "127.0.0.1"
 
     def start_broadcast(self):
@@ -54,9 +65,10 @@ class ClusterManager:
             while self.is_running:
                 try:
                     sock.sendto(message, ('<broadcast>', BROADCAST_PORT))
-                    time.sleep(5)
-                except:
-                    pass
+                    time.sleep(BROADCAST_INTERVAL)
+                except Exception as e:
+                    logger.warning(f"广播发送失败: {e}")
+                    time.sleep(1)
             sock.close()
 
         threading.Thread(target=broadcast_loop, daemon=True).start()
@@ -82,9 +94,11 @@ class ClusterManager:
                             "last_seen": time.time(),
                             "role": "worker"
                         }
-                        print(f"[发现] Worker节点: {name} ({ip})")
-                except:
-                    pass
+                        logger.info(f"发现 Worker节点: {name} ({ip})")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"收到无效JSON数据: {e}")
+                except Exception as e:
+                    logger.warning(f"处理注册消息失败: {e}")
             sock.close()
 
         threading.Thread(target=listener_loop, daemon=True).start()
@@ -95,10 +109,10 @@ class ClusterManager:
             while self.is_running:
                 current_time = time.time()
                 for ip in list(self.nodes.keys()):
-                    if current_time - self.nodes[ip]["last_seen"] > 30:
+                    if current_time - self.nodes[ip]["last_seen"] > NODE_TIMEOUT:
                         self.nodes[ip]["status"] = "offline"
-                        print(f"[离线] 节点: {self.nodes[ip]['name']} ({ip})")
-                time.sleep(10)
+                        logger.info(f"节点离线: {self.nodes[ip]['name']} ({ip})")
+                time.sleep(HEARTBEAT_INTERVAL)
 
         threading.Thread(target=check_loop, daemon=True).start()
 
@@ -106,7 +120,7 @@ class ClusterManager:
         """启动RPC服务器"""
         rpc_path = Path(__file__).parent.parent / "bin" / "rpc-server.exe"
         if not rpc_path.exists():
-            print(f"[错误] RPC服务器不存在: {rpc_path}")
+            logger.error(f"RPC服务器不存在: {rpc_path}")
             return False
 
         try:
@@ -115,17 +129,17 @@ class ClusterManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            print(f"[启动] RPC服务器 - 端口 {RPC_PORT}")
+            logger.info(f"RPC服务器启动成功 - 端口 {RPC_PORT}")
             return True
         except Exception as e:
-            print(f"[错误] 启动RPC服务器失败: {e}")
+            logger.error(f"启动RPC服务器失败: {e}")
             return False
 
     def start_api_server(self, model_path, ngl=99):
         """启动API服务器"""
         server_path = Path(__file__).parent.parent / "bin" / "llama-server.exe"
         if not server_path.exists():
-            print(f"[错误] API服务器不存在: {server_path}")
+            logger.error(f"API服务器不存在: {server_path}")
             return False
 
         # 收集所有Worker节点
@@ -149,12 +163,12 @@ class ClusterManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            print(f"[启动] API服务器 - 端口 {API_PORT}")
-            print(f"[模型] {model_path}")
-            print(f"[节点] {len(rpc_args)//2} 个Worker")
+            logger.info(f"API服务器启动成功 - 端口 {API_PORT}")
+            logger.info(f"模型: {model_path}")
+            logger.info(f"Worker节点: {len(rpc_args)//2} 个")
             return True
         except Exception as e:
-            print(f"[错误] 启动API服务器失败: {e}")
+            logger.error(f"启动API服务器失败: {e}")
             return False
 
     def start(self):
@@ -163,7 +177,7 @@ class ClusterManager:
         self.start_broadcast()
         self.start_listener()
         self.check_nodes()
-        print(f"[启动] 集群管理器 - Master IP: {self.master_ip}")
+        logger.info(f"集群管理器启动 - Master IP: {self.master_ip}")
 
     def stop(self):
         """停止集群管理器"""
@@ -172,7 +186,7 @@ class ClusterManager:
             self.rpc_process.terminate()
         if self.api_process:
             self.api_process.terminate()
-        print("[停止] 集群管理器")
+        logger.info("集群管理器已停止")
 
 
 # 全局实例
@@ -202,14 +216,8 @@ class ClusterHandler(SimpleHTTPRequestHandler):
             self.send_json({"nodes": cluster.nodes})
 
         elif self.path == '/api/models':
-            models_dir = Path(__file__).parent.parent / "models"
-            extra_dir = Path("D:/AI-Models")
-            models = set()
-            if models_dir.exists():
-                models.update(f.name for f in models_dir.glob("*.gguf"))
-            if extra_dir.exists():
-                models.update(f.name for f in extra_dir.glob("*.gguf"))
-            self.send_json({"models": sorted(models)})
+            models = list_available_models()
+            self.send_json({"models": models})
 
         elif self.path == '/api/start-rpc':
             result = cluster.start_rpc_server()
@@ -225,9 +233,7 @@ class ClusterHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "请选择模型"}, 400)
                 return
 
-            model_path = Path(__file__).parent.parent / "models" / model
-            if not model_path.exists():
-                model_path = Path("D:/AI-Models") / model
+            model_path = get_model_path(model)
             if not model_path.exists():
                 self.send_json({"error": f"模型不存在: {model}"}, 400)
                 return
@@ -579,10 +585,9 @@ def get_html():
 
 
 def main():
-    print(f"AI集群管理器 v{VERSION}")
-    print(f"Master IP: {cluster.master_ip}")
-    print(f"Web UI: http://localhost:{PORT}")
-    print()
+    logger.info(f"AI集群管理器 v{VERSION}")
+    logger.info(f"Master IP: {cluster.master_ip}")
+    logger.info(f"Web UI: http://localhost:{PORT}")
 
     # 启动集群管理器
     cluster.start()
@@ -595,7 +600,7 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n正在停止...")
+        logger.info("正在停止...")
         cluster.stop()
         server.server_close()
 

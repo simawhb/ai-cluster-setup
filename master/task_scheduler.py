@@ -4,86 +4,28 @@
 
 import json
 import time
+import logging
 import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# 节点配置
-NODES = {
-    "master": {"ip": "192.168.31.202", "port": 8080, "ram": 32, "model": "gemma-4-12b-it-Q4_K_M.gguf"},
-    "worker1": {"ip": "192.168.31.110", "port": 50051, "ram": 16},
-    "worker2": {"ip": "192.168.31.50", "port": 50051, "ram": 4},
-    "worker3": {"ip": "192.168.31.139", "port": 50051, "ram": 8},
-    "worker4": {"ip": "192.168.31.216", "port": 50051, "ram": 12},
-}
+# 添加父目录到路径，以便导入 config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import (
+    MASTER_IP, API_PORT, WORKERS, DEFAULT_MODEL,
+    AGENTS, WORKFLOWS, SCHEDULER_UI_PORT, LLM_TIMEOUT
+)
 
-# Agent 任务配置
-AGENTS = {
-    "scout": {
-        "name": "Scout 司徒特",
-        "desc": "市场监管情报收集",
-        "model": "gemma-4-12b-it-Q4_K_M.gguf",
-        "temperature": 0.3,
-        "max_tokens": 2000,
-        "system_prompt": "你是Scout，负责搜集市场监管、广告合规相关的情报。请提供准确、及时的信息。"
-    },
-    "digit": {
-        "name": "Digit 迪哥",
-        "desc": "数据分析与风险评估",
-        "model": "gemma-4-12b-it-Q4_K_M.gguf",
-        "temperature": 0.3,
-        "max_tokens": 1500,
-        "system_prompt": "你是Digit，负责数据分析和风险评估。请用数据说话，提供客观的分析结果。"
-    },
-    "nova": {
-        "name": "Nova 娜娜",
-        "desc": "抖音内容创作",
-        "model": "gemma-4-12b-it-Q4_K_M.gguf",
-        "temperature": 0.7,
-        "max_tokens": 3000,
-        "system_prompt": "你是Nova，负责创作抖音内容。请创作吸引人、合规的短视频文案。"
-    },
-    "lex": {
-        "name": "Lex 雷虎",
-        "desc": "广告法合规审核",
-        "model": "gemma-4-12b-it-Q4_K_M.gguf",
-        "temperature": 0.1,
-        "max_tokens": 2000,
-        "system_prompt": "你是Lex，广告法合规专家。请严格审核内容是否符合广告法规定，指出违规风险。"
-    },
-    "memo": {
-        "name": "Memo 小蔓",
-        "desc": "行政管理汇总",
-        "model": "gemma-4-12b-it-Q4_K_M.gguf",
-        "temperature": 0.2,
-        "max_tokens": 1500,
-        "system_prompt": "你是Memo，负责行政管理和汇总。请整理工作成果，生成规范的报告。"
-    }
-}
-
-# 工作流定义
-WORKFLOWS = {
-    "content_review": {
-        "name": "内容审核流程",
-        "desc": "搜集情报 → 内容创作 → 合规审核",
-        "steps": ["scout", "nova", "lex"],
-        "parallel_groups": [["scout"], ["nova"], ["lex"]]  # 顺序执行
-    },
-    "risk_analysis": {
-        "name": "风险分析流程",
-        "desc": "搜集情报 → 数据分析 → 合规审核",
-        "steps": ["scout", "digit", "lex"],
-        "parallel_groups": [["scout"], ["digit"], ["lex"]]  # 顺序执行
-    },
-    "full_workflow": {
-        "name": "完整工作流",
-        "desc": "搜集 ‖ 分析 → 创作 → 审核 → 汇总",
-        "steps": ["scout", "digit", "nova", "lex", "memo"],
-        "parallel_groups": [["scout", "digit"], ["nova"], ["lex"], ["memo"]]  # Scout和Digit并行
-    }
-}
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
 class TaskScheduler:
@@ -93,7 +35,6 @@ class TaskScheduler:
     def call_llm(self, agent_id, user_message, context=""):
         """调用LLM执行任务"""
         agent = AGENTS[agent_id]
-        model = agent["model"]
 
         # 构建消息
         messages = [
@@ -106,14 +47,14 @@ class TaskScheduler:
         # 调用 API
         try:
             resp = requests.post(
-                f"http://{NODES['master']['ip']}:{NODES['master']['port']}/v1/chat/completions",
+                f"http://{MASTER_IP}:{API_PORT}/v1/chat/completions",
                 json={
-                    "model": model,
+                    "model": DEFAULT_MODEL,
                     "messages": messages,
                     "max_tokens": agent["max_tokens"],
                     "temperature": agent["temperature"]
                 },
-                timeout=1200  # 20分钟超时
+                timeout=LLM_TIMEOUT
             )
             result = resp.json()
             content = result["choices"][0]["message"].get("content", "")
@@ -126,6 +67,7 @@ class TaskScheduler:
                 "tokens": result.get("usage", {})
             }
         except Exception as e:
+            logger.error(f"LLM调用失败 ({agent['name']}): {e}")
             return {
                 "success": False,
                 "agent": agent["name"],
@@ -142,16 +84,16 @@ class TaskScheduler:
         # Memo 只使用 Lex 的输出，避免上下文过长
         context_filter = {"memo": ["lex"]}
 
-        print(f"\n{'='*50}")
-        print(f"工作流: {workflow['name']}")
-        print(f"主题: {topic}")
-        print(f"步骤: {' → '.join(AGENTS[s]['name'] for s in workflow['steps'])}")
-        print(f"最大并发: {max_workers}")
-        print(f"{'='*50}\n")
+        logger.info(f"{'='*50}")
+        logger.info(f"工作流: {workflow['name']}")
+        logger.info(f"主题: {topic}")
+        logger.info(f"步骤: {' → '.join(AGENTS[s]['name'] for s in workflow['steps'])}")
+        logger.info(f"最大并发: {max_workers}")
+        logger.info(f"{'='*50}")
 
         for group_idx, group in enumerate(parallel_groups):
             if len(group) > 1:
-                print(f"[并行组 {group_idx+1}] {', '.join(AGENTS[s]['name'] for s in group)}")
+                logger.info(f"[并行组 {group_idx+1}] {', '.join(AGENTS[s]['name'] for s in group)}")
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = {}
@@ -174,13 +116,13 @@ class TaskScheduler:
                         results.append(result)
                         if result["success"]:
                             context_map[step] = result["content"]
-                            print(f"  ✅ {AGENTS[step]['name']} 完成 ({result['tokens'].get('total_tokens', '?')} tokens)")
+                            logger.info(f"  ✅ {AGENTS[step]['name']} 完成 ({result['tokens'].get('total_tokens', '?')} tokens)")
                         else:
-                            print(f"  ❌ {AGENTS[step]['name']} 失败: {result['error']}")
+                            logger.error(f"  ❌ {AGENTS[step]['name']} 失败: {result['error']}")
             else:
                 step = group[0]
                 agent = AGENTS[step]
-                print(f"[{group_idx+1}/{len(parallel_groups)}] {agent['name']} 执行中...")
+                logger.info(f"[{group_idx+1}/{len(parallel_groups)}] {agent['name']} 执行中...")
 
                 # 收集前置上下文（根据 filter 决定范围）
                 if step in context_filter:
@@ -197,9 +139,9 @@ class TaskScheduler:
 
                 if result["success"]:
                     context_map[step] = result["content"]
-                    print(f"  ✅ 完成 ({result['tokens'].get('total_tokens', '?')} tokens)")
+                    logger.info(f"  ✅ 完成 ({result['tokens'].get('total_tokens', '?')} tokens)")
                 else:
-                    print(f"  ❌ 失败: {result['error']}")
+                    logger.error(f"  ❌ 失败: {result['error']}")
 
         final_context = "\n\n".join(
             f"## {AGENTS[s]['name']} 的分析：\n{context_map[s]}"
@@ -216,12 +158,12 @@ class TaskScheduler:
 
     def run_single_agent(self, agent_id, message):
         """执行单个Agent任务"""
-        print(f"\n{AGENTS[agent_id]['name']} 执行中...")
+        logger.info(f"{AGENTS[agent_id]['name']} 执行中...")
         result = self.call_llm(agent_id, message)
         if result["success"]:
-            print(f"✅ 完成")
+            logger.info(f"✅ 完成")
         else:
-            print(f"❌ 失败: {result['error']}")
+            logger.error(f"❌ 失败: {result['error']}")
         return result
 
 
@@ -395,10 +337,10 @@ async function runAgent(agentId) {
 
 
 def main():
-    port = 18083
+    port = SCHEDULER_UI_PORT
     server = HTTPServer(("0.0.0.0", port), SchedulerHandler)
-    print(f"任务调度器启动: http://localhost:{port}")
-    print(f"API: http://localhost:{port}/api/run?workflow=full_workflow&topic=测试")
+    logger.info(f"任务调度器启动: http://localhost:{port}")
+    logger.info(f"API: http://localhost:{port}/api/run?workflow=full_workflow&topic=测试")
     server.serve_forever()
 
 

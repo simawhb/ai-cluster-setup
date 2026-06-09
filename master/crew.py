@@ -7,20 +7,39 @@
 
 import json
 import time
+import logging
 import requests
 from dataclasses import dataclass
 from typing import List, Optional, Callable, Dict, Set
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import get_llm_base_url, DEFAULT_MODEL, LLM_TIMEOUT, OUTPUTS_DIR
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class LLMConfig:
     """LLM配置"""
-    base_url: str = "http://192.168.31.202:8080"
-    model: str = "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf"
+    base_url: str = None
+    model: str = None
     temperature: float = 0.7
     max_tokens: int = 500
+
+    def __post_init__(self):
+        if self.base_url is None:
+            self.base_url = get_llm_base_url()
+        if self.model is None:
+            self.model = DEFAULT_MODEL
 
 
 class Agent:
@@ -77,20 +96,20 @@ class Agent:
                     "max_tokens": self.llm.max_tokens,
                     "temperature": self.llm.temperature
                 },
-                timeout=1200  # 20分钟超时，Memo需要处理大量上下文
+                timeout=LLM_TIMEOUT
             )
             result = resp.json()
             content = result["choices"][0]["message"].get("content", "")
 
             if self.verbose:
                 tokens = result.get("usage", {})
-                print(f"  [{self.role}] 完成 ({tokens.get('total_tokens', '?')} tokens)")
+                logger.info(f"  [{self.role}] 完成 ({tokens.get('total_tokens', '?')} tokens)")
 
             return content
 
         except Exception as e:
             if self.verbose:
-                print(f"  [{self.role}] 错误: {e}")
+                logger.error(f"  [{self.role}] 错误: {e}")
             return f"[错误] {e}"
 
 
@@ -142,14 +161,14 @@ class Crew:
         start_time = time.time()
 
         if self.verbose:
-            print("\n" + "="*60)
-            print("🐎 驷马说法 - 多Agent协作工作流（并行模式）")
-            print("="*60)
-            print(f"Agent数量: {len(self.agents)}")
-            print(f"任务数量: {len(self.tasks)}")
-            print(f"最大并发: {max_workers}")
-            print(f"执行顺序: {' → '.join(t.agent.role for t in self.tasks)}")
-            print("="*60 + "\n")
+            logger.info("="*60)
+            logger.info("🐎 驷马说法 - 多Agent协作工作流（并行模式）")
+            logger.info("="*60)
+            logger.info(f"Agent数量: {len(self.agents)}")
+            logger.info(f"任务数量: {len(self.tasks)}")
+            logger.info(f"最大并发: {max_workers}")
+            logger.info(f"执行顺序: {' → '.join(t.agent.role for t in self.tasks)}")
+            logger.info("="*60)
 
         # 构建依赖图
         task_map = {t._id: t for t in self.tasks}
@@ -171,12 +190,12 @@ class Crew:
                 if not ready:
                     # 没有可执行的任务（可能有循环依赖）
                     if self.verbose:
-                        print("⚠️ 无可用任务，可能存在循环依赖")
+                        logger.warning("无可用任务，可能存在循环依赖")
                     break
 
                 if self.verbose:
                     names = [t.agent.role for t in ready]
-                    print(f"[并行执行] {', '.join(names)}")
+                    logger.info(f"[并行执行] {', '.join(names)}")
 
                 # 并行提交所有就绪任务
                 futures = {
@@ -189,7 +208,7 @@ class Crew:
                     task, result = future.result()
                     completed.add(task._id)
                     if self.verbose:
-                        print(f"  ✅ {task.agent.role} 完成")
+                        logger.info(f"  ✅ {task.agent.role} 完成")
 
                 remaining = not_ready
 
@@ -201,9 +220,9 @@ class Crew:
         elapsed = time.time() - start_time
 
         if self.verbose:
-            print("\n" + "="*60)
-            print(f"✅ 工作流完成! 耗时: {elapsed:.1f}秒")
-            print("="*60)
+            logger.info("="*60)
+            logger.info(f"✅ 工作流完成! 耗时: {elapsed:.1f}秒")
+            logger.info("="*60)
 
         return {
             "success": True,
@@ -336,15 +355,13 @@ def create_full_workflow_crew(topic: str) -> Crew:
 # ========== CLI 入口 ==========
 
 if __name__ == "__main__":
-    import sys
-
     topic = sys.argv[1] if len(sys.argv) > 1 else "热玛吉医美广告合规"
     workflow = sys.argv[2] if len(sys.argv) > 2 else "full"
     max_workers = int(sys.argv[3]) if len(sys.argv) > 3 else 2
 
-    print(f"\n主题: {topic}")
-    print(f"工作流: {workflow}")
-    print(f"并发数: {max_workers}\n")
+    logger.info(f"主题: {topic}")
+    logger.info(f"工作流: {workflow}")
+    logger.info(f"并发数: {max_workers}")
 
     if workflow == "content":
         crew = create_content_review_crew(topic)
@@ -356,9 +373,8 @@ if __name__ == "__main__":
     result = crew.kickoff(max_workers=max_workers)
 
     # 保存结果
-    output_dir = Path(__file__).parent.parent / "outputs"
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / f"crew_{workflow}_{int(time.time())}.txt"
+    OUTPUTS_DIR.mkdir(exist_ok=True)
+    output_file = OUTPUTS_DIR / f"crew_{workflow}_{int(time.time())}.txt"
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(f"主题: {topic}\n")
@@ -367,4 +383,4 @@ if __name__ == "__main__":
         f.write("="*60 + "\n")
         f.write(result["final_output"])
 
-    print(f"\n结果已保存: {output_file}")
+    logger.info(f"结果已保存: {output_file}")

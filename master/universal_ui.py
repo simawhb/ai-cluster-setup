@@ -7,15 +7,25 @@
 
 import json
 import time
+import logging
 import requests
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import sys
 import threading
 
-# 节点配置
-LLM_BASE_URL = "http://192.168.31.202:8080"
-LLM_MODEL = "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf"
+# 添加父目录到路径，以便导入 config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import get_llm_base_url, DEFAULT_MODEL, WORKFLOW_UI_PORT, LLM_TIMEOUT
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # 场景模板
 SCENES = {
@@ -98,13 +108,14 @@ def call_llm(role: str, goal: str, task: str, context: str = "", temp: float = 0
 
     try:
         resp = requests.post(
-            f"{LLM_BASE_URL}/v1/chat/completions",
-            json={"model": LLM_MODEL, "messages": messages, "max_tokens": tokens, "temperature": temp},
-            timeout=1200
+            f"{get_llm_base_url()}/v1/chat/completions",
+            json={"model": DEFAULT_MODEL, "messages": messages, "max_tokens": tokens, "temperature": temp},
+            timeout=LLM_TIMEOUT
         )
         result = resp.json()
         return result["choices"][0]["message"].get("content", ""), result.get("usage", {})
     except Exception as e:
+        logger.error(f"LLM调用失败 ({role}): {e}")
         return f"[错误] {e}", {}
 
 
@@ -118,10 +129,10 @@ def run_scene(scene_id: str, topic: str, custom_agents=None, max_workers=2):
     results = []
     context_map = {}
 
-    print(f"\n{'='*50}")
-    print(f"场景: {SCENES[scene_id]['name']}")
-    print(f"主题: {topic}")
-    print(f"{'='*50}\n")
+    logger.info(f"{'='*50}")
+    logger.info(f"场景: {SCENES[scene_id]['name']}")
+    logger.info(f"主题: {topic}")
+    logger.info(f"{'='*50}")
 
     for i, agent_config in enumerate(agents):
         role = agent_config["role"]
@@ -129,7 +140,7 @@ def run_scene(scene_id: str, topic: str, custom_agents=None, max_workers=2):
         temp = agent_config.get("temp", 0.7)
         tokens = agent_config.get("tokens", 1500)
 
-        print(f"[{i+1}/{len(agents)}] {role} 执行中...")
+        logger.info(f"[{i+1}/{len(agents)}] {role} 执行中...")
 
         ctx = "\n\n".join(f"## {k} 的输出:\n{v}" for k, v in context_map.items())
         content, usage = call_llm(role, goal, topic, ctx, temp, tokens)
@@ -141,7 +152,7 @@ def run_scene(scene_id: str, topic: str, custom_agents=None, max_workers=2):
         })
         context_map[role] = content
 
-        print(f"  ✅ 完成 ({usage.get('total_tokens', '?')} tokens)")
+        logger.info(f"  ✅ 完成 ({usage.get('total_tokens', '?')} tokens)")
 
     return results
 
@@ -363,10 +374,10 @@ init();
 
 
 def main():
-    port = 18082
+    port = WORKFLOW_UI_PORT
     server = HTTPServer(("0.0.0.0", port), UIHandler)
-    print(f"通用AI工作流启动: http://localhost:{port}")
-    print(f"支持场景: 查询、编程、创作、翻译、营销、自定义")
+    logger.info(f"通用AI工作流启动: http://localhost:{port}")
+    logger.info(f"支持场景: 查询、编程、创作、翻译、营销、自定义")
     server.serve_forever()
 
 

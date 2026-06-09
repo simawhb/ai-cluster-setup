@@ -27,3 +27,15 @@ Desktop.ini
 # Logs
 *.log
 logs/
+
+# Outputs
+outputs/
+
+# Environment and secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Config with secrets
+config.local.py
