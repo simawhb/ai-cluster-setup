@@ -84,8 +84,50 @@ ai-cluster-setup/
 
 ### Step 4: 启动llama-server
 
+有三种模式可选：
+
 ```bash
-双击 start-llama-server.bat
+# 本地 GPU 模式（推荐，最快）
+双击 start-local.bat
+
+# 分布式模式（使用所有 Worker）
+双击 start-distributed.bat
+
+# 混合模式（GPU + Worker）
+双击 start-hybrid.bat
+```
+
+## 推理模式对比
+
+| 模式 | 启动命令 | 速度 | 适用场景 |
+|------|----------|------|----------|
+| 本地 GPU | `start-local.bat` | ~1.7 tokens/s | 日常使用，7B/12B 模型 |
+| 分布式 | `start-distributed.bat` | ~0.5 tokens/s | 14B+ 大模型 |
+| 混合 | `start-hybrid.bat` | ~1.0 tokens/s | 平衡速度与扩展 |
+
+### 分布式模式命令详解
+
+```bash
+# 基本格式
+bin\llama-server.exe -m <模型路径> --rpc <Worker1>,<Worker2>,...
+
+# 完整示例
+bin\llama-server.exe ^
+  -m D:\AI-Models\gemma-4-12b-it-Q4_K_M.gguf ^
+  --host 0.0.0.0 --port 8080 ^
+  --rpc 192.168.31.110:50051,192.168.31.50:50051,192.168.31.139:50051,192.168.31.216:50051
+
+# 只用部分 Worker
+bin\llama-server.exe ^
+  -m D:\AI-Models\gemma-4-12b-it-Q4_K_M.gguf ^
+  --host 0.0.0.0 --port 8080 ^
+  --rpc 192.168.31.110:50051,192.168.31.139:50051
+
+# 混合模式（GPU 20层 + Worker）
+bin\llama-server.exe ^
+  -m D:\AI-Models\gemma-4-12b-it-Q4_K_M.gguf ^
+  --host 0.0.0.0 --port 8080 -ngl 20 ^
+  --rpc 192.168.31.110:50051,192.168.31.50:50051
 ```
 
 ## Web UI 端口说明
