@@ -1,0 +1,39 @@
+  error: subprocess-exited-with-error
+  
+  × Preparing metadata (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [21 lines of output]
+      + C:\Users\whb\AppData\Local\Programs\Python\Python315\python.exe C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88\vendored-meson\meson\meson.py setup C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88 C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88\.mesonpy-vuusw500 -Dbuildtype=release -Db_ndebug=if-release -Db_vscrt=md --native-file=C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88\.mesonpy-vuusw500\meson-python-native-file.ini
+      The Meson build system
+      Version: 1.9.2
+      Source dir: C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88
+      Build dir: C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88\.mesonpy-vuusw500
+      Build type: native build
+      WARNING: Failed to activate VS environment: Could not find C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe
+      Project name: NumPy
+      Project version: 2.4.6
+      
+      ..\meson.build:1:0: ERROR: Unknown compiler(s): [['icl'], ['cl'], ['cc'], ['gcc'], ['clang'], ['clang-cl'], ['pgcc']]
+      The following exception(s) were encountered:
+      Running `icl ""` gave "[WinError 2] 系统找不到指定的文件。"
+      Running `cl /?` gave "[WinError 2] 系统找不到指定的文件。"
+      Running `cc --version` gave "[WinError 2] 系统找不到指定的文件。"
+      Running `gcc --version` gave "[WinError 2] 系统找不到指定的文件。"
+      Running `clang --version` gave "[WinError 2] 系统找不到指定的文件。"
+      Running `clang-cl /?` gave "[WinError 2] 系统找不到指定的文件。"
+      Running `pgcc --version` gave "[WinError 2] 系统找不到指定的文件。"
+      
+      A full log can be found at C:\Users\whb\AppData\Local\Temp\pip-install-1j_377a0\numpy_28c9b5b818894ef6b61b0e7759b35e88\.mesonpy-vuusw500\meson-logs\meson-log.txt
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+
+[notice] A new release of pip is available: 26.1.1 -> 26.1.2
+[notice] To update, run: C:\Users\whb\AppData\Local\Programs\Python\Python315\python.exe -m pip install --upgrade pip
+error: metadata-generation-failed
+
+× Encountered error while generating package metadata.
+╰─> numpy
+
+note: This is an issue with the package mentioned above, not pip.
+hint: See above for details.
